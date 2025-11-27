@@ -1,5 +1,8 @@
 mqtt:
   enabled: False
+  
+tls:
+  enabled: False
 
 ffmpeg:
   path: "/usr/custom-ffmpeg"
