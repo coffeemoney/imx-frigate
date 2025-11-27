@@ -21,9 +21,15 @@ services:
       #- "8554:8554" # RTSP feeds
       #- "8555:8555/tcp" # WebRTC over tcp
       #- "8555:8555/udp" # WebRTC over udp
-
+    networks:
+      - frigate
   cloudflared:
     container_name: cloudflared
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
     command: tunnel --no-autoupdate run --token <YOUR_TUNNEL_TOKEN>
+    networks:
+      - frigate
+
+networks:
+  frigate:
