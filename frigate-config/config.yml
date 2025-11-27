@@ -1,3 +1,6 @@
+mqtt:
+  enabled: False
+
 ffmpeg:
   path: "/usr/custom-ffmpeg"
 
