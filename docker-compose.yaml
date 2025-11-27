@@ -7,7 +7,6 @@ services:
     image: ghcr.io/blakeblackshear/frigate:0.15.2
     shm_size: "512mb" # update for your cameras based on calculation above
     volumes:
-      - /etc/localtime:/etc/localtime:ro
       #- /path/to/your/config:/config
       #- /path/to/your/storage:/media/frigate
       - type: tmpfs # Optional: 1GB of memory, reduces SSD/SD Card wear
