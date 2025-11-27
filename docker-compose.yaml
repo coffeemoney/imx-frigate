@@ -15,7 +15,7 @@ services:
         target: /tmp/cache
         tmpfs:
           size: 1000000000
-    ports:
+    #ports:
       #- "8971:8971"
       # - "5000:5000" # Internal unauthenticated access. Expose carefully.
       #- "8554:8554" # RTSP feeds
