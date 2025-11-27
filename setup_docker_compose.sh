@@ -35,7 +35,7 @@ echo "Updating Frigate config file..."
 
 sudo sed -i "s|<retain days - to input>|$RETAIN_DAYS|g" "$CONFIG_FILE"
 sudo sed -i "s|<retain mode - to input>|$RETAIN_MODE|g" "$CONFIG_FILE"
-sudo sed -i "s|<rtsp - to input>|$CAMERA_RTSP|g" "$CONFIG_FILE"
+sudo sed -i "s|rtsp_here|$CAMERA_RTSP|g" "$CONFIG_FILE"
 
 echo "Frigate config updated successfully!"
 echo ""

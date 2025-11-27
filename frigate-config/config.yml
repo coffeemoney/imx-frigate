@@ -4,9 +4,6 @@ mqtt:
 tls:
   enabled: False
 
-ffmpeg:
-  path: "/usr/custom-ffmpeg"
-
 record:
   enabled: true
   retain:
@@ -30,7 +27,7 @@ cameras:
       inputs:
         # Required: the path to the stream
         # NOTE: path may include environment variables or docker secrets, which must begin with 'FRIGATE_' and be referenced in {}
-        - path: <rtsp - to input>
+        - path: rtsp_here
           roles:
             - record
     detect:
