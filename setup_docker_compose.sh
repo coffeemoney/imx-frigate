@@ -14,14 +14,13 @@ docker-compose --version || { echo "Docker Compose installation failed!"; exit 1
 
 echo ""
 echo "===== Frigate Configuration Setup ====="
-echo ""
 
 read -p "Enter retention days: " RETAIN_DAYS
 read -p "Enter retention mode (all / motion / active_objects): " RETAIN_MODE
-read -p "Enter camera stream path (rtsp://...): " CAMERA_STREAM
+read -p "Enter camera RTSP stream URL (rtsp://...): " CAMERA_RTSP
 
-if [[ -z "$RETAIN_DAYS" || -z "$RETAIN_MODE" || -z "$CAMERA_STREAM" ]]; then
-    echo "Error: One or more Frigate config values are empty. Exiting..."
+if [[ -z "$RETAIN_DAYS" || -z "$RETAIN_MODE" || -z "$CAMERA_RTSP" ]]; then
+    echo "Error: One or more required inputs are empty. Exiting..."
     exit 1
 fi
 
@@ -34,9 +33,9 @@ fi
 
 echo "Updating Frigate config file..."
 
-sudo sed -i "s|<to input>|$RETAIN_DAYS|" "$CONFIG_FILE"
-sudo sed -i "0,/ <to input>/s|<to input>|$RETAIN_MODE|" "$CONFIG_FILE"
-sudo sed -i "s|<to input>|$CAMERA_STREAM|" "$CONFIG_FILE"
+sudo sed -i "s|<retain days - to input>|$RETAIN_DAYS|g" "$CONFIG_FILE"
+sudo sed -i "s|<retain mode - to input>|$RETAIN_MODE|g" "$CONFIG_FILE"
+sudo sed -i "s|<rtsp - to input>|$CAMERA_RTSP|g" "$CONFIG_FILE"
 
 echo "Frigate config updated successfully!"
 echo ""

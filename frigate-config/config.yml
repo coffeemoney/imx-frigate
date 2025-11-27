@@ -5,7 +5,7 @@ record:
   enabled: true
   retain:
       # Required: Retention days (default: shown below)
-      days: <to input>
+      days: <retain days - to input>
       # Optional: Mode for retention. (default: shown below)
       #   all - save all recording segments for detections regardless of activity
       #   motion - save all recordings segments for detections with any detected motion
@@ -15,7 +15,7 @@ record:
       #       here, the segments will already be gone by the time this mode is applied.
       #       For example, if the camera retain mode is "motion", the segments without motion are
       #       never stored, so setting the mode to "all" here won't bring them back.
-      mode: <to input>
+      mode: <retain mode - to input>
 
 cameras:
   camera1:
@@ -24,7 +24,7 @@ cameras:
       inputs:
         # Required: the path to the stream
         # NOTE: path may include environment variables or docker secrets, which must begin with 'FRIGATE_' and be referenced in {}
-        - path: <to input>
+        - path: <rtsp - to input>
           roles:
             - record
     detect:
