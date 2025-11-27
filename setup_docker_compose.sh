@@ -60,40 +60,6 @@ echo ""
 echo "Running 'docker-compose up -d'..."
 docker-compose up -d
 
-echo "===== Adding mount entry to /etc/fstab ====="
-FSTAB_ENTRY="/dev/nvme0n1          /media/nvme          auto       defaults              0  0"
-
-if grep -Fxq "$FSTAB_ENTRY" /etc/fstab; then
-    echo "Entry already exists in /etc/fstab, skipping..."
-else
-    echo "$FSTAB_ENTRY" | sudo tee -a /etc/fstab
-    echo "Entry added."
-fi
-
-echo "===== Network Configuration ====="
-NETWORK_CONFIG_PATH="/etc/systemd/network/20-wired.network"
-
-if [[ ! -f "$NETWORK_CONFIG_PATH" ]]; then
-    echo "Creating $NETWORK_CONFIG_PATH..."
-    sudo mkdir -p /etc/systemd/network
-
-    cat <<EOL | sudo tee "$NETWORK_CONFIG_PATH" > /dev/null
-[Match]
-Name=eth0
-
-[Network]
-Address=192.168.2.1/24
-EOL
-
-    sudo chmod 644 "$NETWORK_CONFIG_PATH"
-    echo "Network configuration created."
-
-    echo "Reloading systemd-networkd..."
-    sudo systemctl restart systemd-networkd
-else
-    echo "Network config already exists, skipping..."
-fi
-
 echo "===== Fetching Frigate Admin Credentials ====="
 FRIGATE_LOGS=$(docker logs frigate 2>&1)
 
