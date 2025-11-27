@@ -13,6 +13,34 @@ echo "Verifying Docker Compose installation..."
 docker-compose --version || { echo "Docker Compose installation failed!"; exit 1; }
 
 echo ""
+echo "===== Frigate Configuration Setup ====="
+echo ""
+
+read -p "Enter retention days: " RETAIN_DAYS
+read -p "Enter retention mode (all / motion / active_objects): " RETAIN_MODE
+read -p "Enter camera stream path (rtsp://...): " CAMERA_STREAM
+
+if [[ -z "$RETAIN_DAYS" || -z "$RETAIN_MODE" || -z "$CAMERA_STREAM" ]]; then
+    echo "Error: One or more Frigate config values are empty. Exiting..."
+    exit 1
+fi
+
+CONFIG_FILE="frigate-config/config.yml"
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "ERROR: $CONFIG_FILE not found!"
+    exit 1
+fi
+
+echo "Updating Frigate config file..."
+
+sudo sed -i "s|<to input>|$RETAIN_DAYS|" "$CONFIG_FILE"
+sudo sed -i "0,/ <to input>/s|<to input>|$RETAIN_MODE|" "$CONFIG_FILE"
+sudo sed -i "s|<to input>|$CAMERA_STREAM|" "$CONFIG_FILE"
+
+echo "Frigate config updated successfully!"
+echo ""
+
 echo "===== Cloudflare Tunnel Setup ====="
 echo ""
 echo "Please follow these steps to create your Cloudflare Tunnel:"
