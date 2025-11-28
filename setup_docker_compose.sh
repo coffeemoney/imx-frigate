@@ -17,9 +17,10 @@ echo "===== Frigate Configuration Setup ====="
 
 read -p "Enter retention days: " RETAIN_DAYS
 read -p "Enter retention mode (all / motion / active_objects): " RETAIN_MODE
-read -p "Enter camera RTSP stream URL (rtsp://...): " CAMERA_RTSP
+read -p "Enter camera High Resolution RTSP stream URL (rtsp://...): " HIGH_CAMERA_RTSP
+read -p "Enter camera Lower Resolution RTSP stream URL (rtsp://...): " LOW_CAMERA_RTSP
 
-if [[ -z "$RETAIN_DAYS" || -z "$RETAIN_MODE" || -z "$CAMERA_RTSP" ]]; then
+if [[ -z "$RETAIN_DAYS" || -z "$RETAIN_MODE" || -z "$HIGH_CAMERA_RTSP" || -z "$LOW_CAMERA_RTSP" ]]; then
     echo "Error: One or more required inputs are empty. Exiting..."
     exit 1
 fi
@@ -35,7 +36,8 @@ echo "Updating Frigate config file..."
 
 sudo sed -i "s|<retain days - to input>|$RETAIN_DAYS|g" "$CONFIG_FILE"
 sudo sed -i "s|<retain mode - to input>|$RETAIN_MODE|g" "$CONFIG_FILE"
-sudo sed -i "s|rtsp_here|$CAMERA_RTSP|g" "$CONFIG_FILE"
+sudo sed -i "s|high_res_rtsp_here|$HIGH_CAMERA_RTSP|g" "$CONFIG_FILE"
+sudo sed -i "s|low_res_rtsp_here|$LOW_CAMERA_RTSP|g" "$CONFIG_FILE"
 
 echo "Frigate config updated successfully!"
 echo ""
@@ -86,6 +88,10 @@ echo ""
 # Start Docker Compose
 echo "Running 'docker-compose up -d'..."
 docker-compose up -d
+
+#Wait for 1 min for frigate to bootup
+echo "Waiting for 1 min for frigate to boot"
+sleep 60
 
 echo "===== Fetching Frigate Admin Credentials ====="
 FRIGATE_LOGS=$(docker logs frigate 2>&1)
