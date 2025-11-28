@@ -25,12 +25,9 @@ cameras:
     enabled: true
     ffmpeg:
       inputs:
-        # Required: the path to the stream
-        # NOTE: path may include environment variables or docker secrets, which must begin with 'FRIGATE_' and be referenced in {}
         - path: 'high_res_rtsp_here'
           roles:
             - record
-      inputs:
         - path: 'low_res_rtsp_here'
           roles:
             - detect
