@@ -1,5 +1,84 @@
 #!/bin/bash
 
+echo ""
+echo "===== WWAN / APN Configuration ====="
+read -p "Enter mobile APN for WWAN (e.g., m2minternet): " WWAN_APN
+
+if [[ -z "$WWAN_APN" ]]; then
+    echo "Error: APN cannot be empty. Exiting..."
+    exit 1
+fi
+
+if [[ ! -f "start_wwan.sh" ]]; then
+    echo "ERROR: start_wwan.sh not found!"
+    exit 1
+fi
+
+echo "Updating APN in start_wwan.sh..."
+
+sudo sed -i "s|apn=[^\"]*|apn=$WWAN_APN|g" start_wwan.sh
+
+echo "APN successfully set in start_wwan.sh!"
+echo ""
+
+echo ""
+echo "===== Setting up WWAN Systemd Service ====="
+
+# Ensure start_wwan.sh exists
+if [[ ! -f "start_wwan.sh" ]]; then
+    echo "ERROR: start_wwan.sh not found in this directory!"
+    exit 1
+fi
+
+echo "Moving start_wwan.sh to /usr/local/bin..."
+sudo mv start_wwan.sh /usr/local/bin/start_wwan.sh
+sudo chmod +x /usr/local/bin/start_wwan.sh
+
+echo "Creating systemd service: /etc/systemd/system/start_wwan.service"
+
+sudo bash -c 'cat >/etc/systemd/system/start_wwan.service' <<'EOF'
+[Unit]
+Description=Start WWAN interface when SIM is detected
+After=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/start_wwan.sh
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+echo "Creating systemd timer: /etc/systemd/system/start_wwan.timer"
+
+sudo bash -c 'cat >/etc/systemd/system/start_wwan.timer' <<'EOF'
+[Unit]
+Description=Retry WWAN startup every 30 seconds until SIM is detected
+
+[Timer]
+OnBootSec=15sec
+OnUnitActiveSec=30sec
+Unit=start_wwan.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+echo "Reloading systemd..."
+sudo systemctl daemon-reload
+
+echo "Enabling services..."
+sudo systemctl enable start_wwan.service
+sudo systemctl enable --now start_wwan.timer
+
+echo "WWAN service + timer setup complete!"
+echo ""
+
+
 echo "===== Installing Dependencies ====="
 
 # Install Docker Compose
