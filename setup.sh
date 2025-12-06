@@ -45,7 +45,6 @@ Wants=network-pre.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/start_wwan.sh
-RemainAfterExit=yes
 StandardOutput=journal
 StandardError=journal
 
@@ -60,9 +59,10 @@ sudo bash -c 'cat >/etc/systemd/system/start_wwan.timer' <<'EOF'
 Description=Retry WWAN startup every 30 seconds until SIM is detected
 
 [Timer]
-OnBootSec=15sec
-OnUnitActiveSec=30sec
+OnBootSec=15s
+OnUnitActiveSec=30s
 Unit=start_wwan.service
+Persistent=true
 
 [Install]
 WantedBy=timers.target
