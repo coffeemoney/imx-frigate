@@ -40,4 +40,15 @@ mmcli -m 0 --simple-connect="apn=<APN_PLACEHOLDER>"
 udhcpc -i wwan0
 
 echo "WWAN connection process complete."
+
+echo "Setting Route for Camera."
+sudo ifconfig eth0 down
+sudo ifconfig eth0 192.168.50.1
+sudo ifconfig eth0 up
+sudo sysctl -w net.ipv4.ip_forward=1
+
+sudo iptables -t nat -A POSTROUTING -o wwan0 -j MASQUERADE
+sudo iptables -A FORWARD -i wwan0 -o eth0 -m state --state RELATED,ESTABLISHED -j ACCEPT
+sudo iptables -A FORWARD -i eth0 -o wwan0 -j ACCEPT
+
 exit 0

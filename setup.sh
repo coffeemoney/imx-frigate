@@ -74,6 +74,7 @@ sudo systemctl daemon-reload
 echo "Enabling services..."
 sudo systemctl enable start_wwan.service
 sudo systemctl enable --now start_wwan.timer
+sudo systemctl enable docker.service
 
 echo "WWAN service + timer setup complete!"
 echo ""
