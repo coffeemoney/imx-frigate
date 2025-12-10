@@ -10,7 +10,7 @@ services:
       - ~/imx-frigate-main/frigate-config:/config
       #- /usr/bin/ffmpeg:/usr/bin/ffmpeg
       #- /usr/bin/ffprobe:/usr/bin/ffprobe
-      #- /path/to/your/storage:/media/frigate
+      - /media/nvme:/media/frigate
       - type: tmpfs # Optional: 1GB of memory, reduces SSD/SD Card wear
         target: /tmp/cache
         tmpfs:
@@ -30,6 +30,17 @@ services:
     command: tunnel --no-autoupdate run --token <YOUR_TUNNEL_TOKEN>
     networks:
       - frigate
-
+  mosquitto:
+    image: eclipse-mosquitto
+    volumes:
+      - ~/imx-frigate-main/mqtt-config:/mosquitto/config
+    networks:
+      - frigate
+  viewu:
+    restart: unless-stopped 
+    image: mjeoffline/viewu:arm64_3.5
+    environment:
+      MQTT_PORT: 1883
+      MQTT_IP: mosquitto
 networks:
   frigate:

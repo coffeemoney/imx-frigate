@@ -1,5 +1,6 @@
 mqtt:
-  enabled: False
+  enabled: True
+  host: mosquitto
   
 tls:
   enabled: False
