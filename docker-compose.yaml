@@ -31,16 +31,20 @@ services:
     networks:
       - frigate
   mosquitto:
+    container_name: mosquitto
     image: eclipse-mosquitto
     volumes:
       - ~/imx-frigate-main/mqtt-config:/mosquitto/config
     networks:
       - frigate
   viewu:
+    container_name: viewu
     restart: unless-stopped 
     image: mjeoffline/viewu:arm64_3.5
     environment:
       MQTT_PORT: 1883
       MQTT_IP: mosquitto
+    networks:
+      - frigate
 networks:
   frigate:
