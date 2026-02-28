@@ -44,6 +44,8 @@ services:
     environment:
       MQTT_PORT: 1883
       MQTT_IP: mosquitto
+      MQTT_USER: "frigate_mqtt_user"
+      MQTT_PASSWORD: "frigate_mqtt_password"
     networks:
       - frigate
 networks:

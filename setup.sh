@@ -83,11 +83,15 @@ echo ""
 echo "===== Installing Dependencies ====="
 
 # Install Docker Compose
-echo "Installing Docker Compose..."
-sudo curl -L "https://github.com/docker/compose/releases/download/v2.32.1/docker-compose-linux-aarch64" -o /usr/local/bin/docker-compose
+if [[ -f "/usr/local/bin/docker-compose" ]]; then
+    echo "Docker Compose already exists. Skipping download..."
+else
+    echo "Installing Docker Compose..."
+    sudo curl -L "https://github.com/docker/compose/releases/download/v2.32.1/docker-compose-linux-aarch64" -o /usr/local/bin/docker-compose
 
-echo "Setting execute permissions for Docker Compose..."
-sudo chmod +x /usr/local/bin/docker-compose
+    echo "Setting execute permissions for Docker Compose..."
+    sudo chmod +x /usr/local/bin/docker-compose
+fi
 
 echo "Verifying Docker Compose installation..."
 docker-compose --version || { echo "Docker Compose installation failed!"; exit 1; }

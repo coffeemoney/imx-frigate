@@ -1,6 +1,8 @@
 mqtt:
   enabled: True
   host: mosquitto
+  user: frigate_mqtt_user
+  password: frigate_mqtt_password
   
 tls:
   enabled: False
