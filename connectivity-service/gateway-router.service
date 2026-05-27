@@ -1,0 +1,14 @@
+[Unit]
+Description=i.MX8 All-In-One Cellular and Bridge Routing Daemon
+After=ModemManager.service NetworkManager.service
+Requires=ModemManager.service NetworkManager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/gateway-master-router.sh
+Restart=always
+RestartSec=15
+User=root
+
+[Install]
+WantedBy=multi-user.target
