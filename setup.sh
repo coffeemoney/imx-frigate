@@ -9,74 +9,68 @@ if [[ -z "$WWAN_APN" ]]; then
     exit 1
 fi
 
-if [[ ! -f "start_wwan.sh" ]]; then
-    echo "ERROR: start_wwan.sh not found!"
+if [[ ! -f "connectivity-service/gateway-master-router.sh" ]]; then
+    echo "ERROR: connectivity-service/gateway-master-router.sh not found!"
     exit 1
 fi
 
-echo "Updating APN in start_wwan.sh..."
+echo "Updating APN in connectivity-service/gateway-master-router.sh..."
 
-sudo sed -i "s|apn=[^\"]*|apn=$WWAN_APN|g" start_wwan.sh
+sudo sed -i "s|APN=\"[^\"]*\"|APN=\"$WWAN_APN\"|g" connectivity-service/gateway-master-router.sh
 
-echo "APN successfully set in start_wwan.sh!"
+echo "APN successfully set in connectivity-service/gateway-master-router.sh!"
 echo ""
 
 echo ""
-echo "===== Setting up WWAN Systemd Service ====="
+echo "===== Setting up Gateway Router Systemd Service ====="
 
-# Ensure start_wwan.sh exists
-if [[ ! -f "start_wwan.sh" ]]; then
-    echo "ERROR: start_wwan.sh not found in this directory!"
+# Ensure needed files exist
+if [[ ! -f "connectivity-service/gateway-master-router.sh" ]]; then
+    echo "ERROR: connectivity-service/gateway-master-router.sh not found!"
+    exit 1
+fi
+if [[ ! -f "connectivity-service/gateway-router.service" ]]; then
+    echo "ERROR: connectivity-service/gateway-router.service not found!"
     exit 1
 fi
 
-echo "Moving start_wwan.sh to /usr/local/bin..."
-sudo mv start_wwan.sh /usr/local/bin/start_wwan.sh
-sudo chmod +x /usr/local/bin/start_wwan.sh
+# Clean up legacy start_wwan service if it exists
+if systemctl is-enabled start_wwan.timer >/dev/null 2>&1; then
+    echo "Disabling legacy start_wwan.timer..."
+    sudo systemctl disable --now start_wwan.timer >/dev/null 2>&1
+fi
+if systemctl is-enabled start_wwan.service >/dev/null 2>&1; then
+    echo "Disabling legacy start_wwan.service..."
+    sudo systemctl disable --now start_wwan.service >/dev/null 2>&1
+fi
+if [[ -f "/etc/systemd/system/start_wwan.timer" ]]; then
+    echo "Removing legacy start_wwan.timer..."
+    sudo rm -f /etc/systemd/system/start_wwan.timer
+fi
+if [[ -f "/etc/systemd/system/start_wwan.service" ]]; then
+    echo "Removing legacy start_wwan.service..."
+    sudo rm -f /etc/systemd/system/start_wwan.service
+fi
+if [[ -f "/usr/local/bin/start_wwan.sh" ]]; then
+    echo "Removing legacy start_wwan.sh script..."
+    sudo rm -f /usr/local/bin/start_wwan.sh
+fi
 
-echo "Creating systemd service: /etc/systemd/system/start_wwan.service"
+echo "Copying gateway-master-router.sh to /usr/bin..."
+sudo cp connectivity-service/gateway-master-router.sh /usr/bin/gateway-master-router.sh
+sudo chmod +x /usr/bin/gateway-master-router.sh
 
-sudo bash -c 'cat >/etc/systemd/system/start_wwan.service' <<'EOF'
-[Unit]
-Description=Start WWAN interface when SIM is detected
-After=network-pre.target
-Wants=network-pre.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/start_wwan.sh
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-echo "Creating systemd timer: /etc/systemd/system/start_wwan.timer"
-
-sudo bash -c 'cat >/etc/systemd/system/start_wwan.timer' <<'EOF'
-[Unit]
-Description=Retry WWAN startup every 30 seconds until SIM is detected
-
-[Timer]
-OnBootSec=15s
-OnUnitActiveSec=30s
-Unit=start_wwan.service
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
+echo "Copying gateway-router.service to /etc/systemd/system..."
+sudo cp connectivity-service/gateway-router.service /etc/systemd/system/gateway-router.service
 
 echo "Reloading systemd..."
 sudo systemctl daemon-reload
 
 echo "Enabling services..."
-sudo systemctl enable start_wwan.service
-sudo systemctl enable --now start_wwan.timer
+sudo systemctl enable --now gateway-router.service
 sudo systemctl enable docker.service
 
-echo "WWAN service + timer setup complete!"
+echo "Gateway Router service setup complete!"
 echo ""
 
 
