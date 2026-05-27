@@ -9,6 +9,8 @@ tls:
 
 record:
   enabled: true
+  export:
+    timelapse_args: "-vf setpts=PTS/60 -r 25"
   retain:
       # Required: Retention days (default: shown below)
       days: <retain days - to input>

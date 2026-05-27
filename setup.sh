@@ -171,6 +171,98 @@ docker-compose up -d
 echo "Waiting for 1 min for frigate to boot"
 sleep 60
 
+echo ""
+echo "===== Setting up Automated Timelapse Exports ====="
+
+echo "Creating automated timelapse export script: /usr/local/bin/export-timelapse.py"
+sudo bash -c 'cat >/usr/local/bin/export-timelapse.py' <<'EOF'
+#!/usr/bin/env python3
+import subprocess
+import json
+import datetime
+import sys
+
+def main():
+    # 1. Fetch live config from Frigate API via docker exec
+    try:
+        result = subprocess.run(
+            ["docker", "exec", "frigate", "curl", "-s", "http://localhost:5000/api/config"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        config = json.loads(result.stdout)
+    except Exception as e:
+        print(f"Error fetching config from Frigate container: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    cameras = config.get("cameras", {})
+    if not cameras:
+        print("No cameras found in Frigate configuration.", file=sys.stderr)
+        sys.exit(0)
+
+    # 2. Calculate yesterday's time range in system/local time
+    today = datetime.date.today()
+    yesterday = today - datetime.timedelta(days=1)
+    
+    # Start and end timestamps for the previous calendar day
+    start_dt = datetime.datetime.combine(yesterday, datetime.time.min)
+    end_dt = datetime.datetime.combine(yesterday, datetime.time.max)
+    
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
+    
+    date_str = yesterday.strftime("%Y-%m-%d")
+    print(f"Exporting timelapses for date: {date_str} (Timestamps: {start_ts} to {end_ts})")
+
+    # 3. For each active camera, trigger the export
+    for camera_name, camera_config in cameras.items():
+        if not camera_config.get("enabled", True):
+            print(f"Skipping disabled camera: {camera_name}")
+            continue
+
+        export_name = f"timelapse_{camera_name}_{date_str}"
+        print(f"Triggering export for {camera_name} -> {export_name}...")
+
+        # Construct the API payload
+        payload = {
+            "playback": "timelapse_25x",
+            "source": "recordings",
+            "name": export_name
+        }
+        
+        # Call the API inside the docker container
+        api_url = f"http://localhost:5000/api/export/{camera_name}/start/{start_ts}/end/{end_ts}"
+        curl_cmd = [
+            "docker", "exec", "frigate",
+            "curl", "-s", "-X", "POST",
+            "-H", "Content-Type: application/json",
+            "-d", json.dumps(payload),
+            api_url
+        ]
+
+        try:
+            res = subprocess.run(curl_cmd, capture_output=True, text=True, check=True)
+            print(f"Response for {camera_name}: {res.stdout.strip()}")
+        except Exception as e:
+            print(f"Failed to trigger export for {camera_name}: {e}", file=sys.stderr)
+
+if __name__ == "__main__":
+    main()
+EOF
+sudo chmod +x /usr/local/bin/export-timelapse.py
+
+echo "Creating daily cron job at 2:00 AM in /etc/cron.d/frigate-timelapse..."
+sudo bash -c 'cat >/etc/cron.d/frigate-timelapse' <<'EOF'
+# Daily cron job to export previous day's timelapse for all enabled cameras in Frigate
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+0 2 * * * root /usr/local/bin/export-timelapse.py > /var/log/frigate-timelapse.log 2>&1
+EOF
+sudo chmod 644 /etc/cron.d/frigate-timelapse
+
+echo "Automated timelapse export setup completed!"
+echo ""
+
 echo "===== Fetching Frigate Admin Credentials ====="
 FRIGATE_LOGS=$(docker logs frigate 2>&1)
 
