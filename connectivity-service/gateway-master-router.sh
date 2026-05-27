@@ -13,16 +13,34 @@ echo "========================================================"
 # --------------------------------------------------
 # PHASE 1: Local LAN Network Bridge Configuration
 # --------------------------------------------------
-# Check if the bridge profile already exists in NetworkManager, if not, build it.
 if ! nmcli connection show "$BRIDGE_INTERFACE" >/dev/null 2>&1; then
-    echo "[+] Creating NetworkManager Bridge configuration..."
+    echo "[+] Creating Optimized NetworkManager Bridge..."
     nmcli connection add type bridge con-name "$BRIDGE_INTERFACE" ifname "$BRIDGE_INTERFACE" ip4 192.168.0.1/24 gw4 192.168.0.1
+    nmcli connection modify "$BRIDGE_INTERFACE" bridge.stp no
+    nmcli connection modify "$BRIDGE_INTERFACE" bridge.forward-delay 0
     nmcli connection add type ethernet con-name br0-eth0 ifname eth0 master "$BRIDGE_INTERFACE"
     nmcli connection add type ethernet con-name br0-eth1 ifname eth1 master "$BRIDGE_INTERFACE"
-    nmcli connection up "$BRIDGE_INTERFACE"
-else
-    echo "[*] NetworkManager Bridge profile already exists."
 fi
+
+echo "[+] Forcing physical link alignment and sync..."
+# Deactivate connections to clear out any boot-time race conditions
+nmcli connection down br0-eth0 >/dev/null 2>&1
+nmcli connection down br0-eth1 >/dev/null 2>&1
+nmcli connection down "$BRIDGE_INTERFACE" >/dev/null 2>&1
+ip link set dev eth0 down
+ip link set dev eth1 down
+sleep 1
+
+# Bring physical links up first
+ip link set dev eth0 up
+ip link set dev eth1 up
+sleep 1
+
+# Fire up the bridge master and force-bind the slave connections
+nmcli connection up "$BRIDGE_INTERFACE"
+nmcli connection up br0-eth0
+nmcli connection up br0-eth1
+echo "[+] Bridge interface network configuration fully hot!"
 
 # --------------------------------------------------
 # PHASE 2: Firewall NAT and IP Forwarding Setup
@@ -34,6 +52,7 @@ echo "[+] Flushing old firewall chains & building NAT rules..."
 iptables -F FORWARD
 iptables -t nat -F POSTROUTING
 
+# Corrected directional rules for legacy iptables binaries
 iptables -A FORWARD -i "$BRIDGE_INTERFACE" -o "$CELL_INTERFACE" -j ACCEPT
 iptables -A FORWARD -i "$CELL_INTERFACE" -o "$BRIDGE_INTERFACE" -m state --state ESTABLISHED,RELATED -j ACCEPT
 iptables -t nat -A POSTROUTING -o "$CELL_INTERFACE" -j MASQUERADE
@@ -65,7 +84,6 @@ while true; do
             echo "[+] Successfully established IP lease and routing tables via udhcpc!"
             
             # Extract carrier DNS information if available and update resolver configuration
-            # This ensures your background containers or apps can resolve names cleanly
             DNS_SERVERS=$(mmcli -m 0 --bearer=0 --xml 2>/dev/null | grep -oPm1 '(?<=<dns>)[^<]+')
             if [ ! -z "$DNS_SERVERS" ]; then
                 echo "nameserver $(echo $DNS_SERVERS | awk '{print $1}')" > /etc/resolv.conf
