@@ -71,8 +71,17 @@ while true; do
         ip link set dev "$CELL_INTERFACE" down
         sleep 1
         
+        # Dynamically detect active modem index
+        MODEM_INDEX=$(mmcli -L | awk -F'/Modem/' '/\/Modem\// {split($2, a, " "); print a[1]; exit}')
+        if [ -z "$MODEM_INDEX" ]; then
+            echo "[!] No modem detected via mmcli! Defaulting to 0."
+            MODEM_INDEX="0"
+        else
+            echo "[+] Detected active modem at index: $MODEM_INDEX"
+        fi
+        
         # Instruct ModemManager to build the mobile connection
-        mmcli -m 0 --simple-connect="apn=$APN,ip-type=ipv4" > /dev/null 2>&1
+        mmcli -m "$MODEM_INDEX" --simple-connect="apn=$APN,ip-type=ipv4" > /dev/null 2>&1
         
         # Bring interface back up physically
         ip link set dev "$CELL_INTERFACE" up
@@ -84,7 +93,7 @@ while true; do
             echo "[+] Successfully established IP lease and routing tables via udhcpc!"
             
             # Extract carrier DNS information if available and update resolver configuration
-            DNS_SERVERS=$(mmcli -m 0 --bearer=0 --xml 2>/dev/null | grep -oPm1 '(?<=<dns>)[^<]+')
+            DNS_SERVERS=$(mmcli -m "$MODEM_INDEX" --bearer=0 --xml 2>/dev/null | grep -oPm1 '(?<=<dns>)[^<]+')
             if [ ! -z "$DNS_SERVERS" ]; then
                 echo "nameserver $(echo $DNS_SERVERS | awk '{print $1}')" > /etc/resolv.conf
                 echo "nameserver $(echo $DNS_SERVERS | awk '{print $2}')" >> /etc/resolv.conf
