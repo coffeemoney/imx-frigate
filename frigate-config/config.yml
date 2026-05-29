@@ -10,7 +10,7 @@ tls:
 record:
   enabled: true
   export:
-    timelapse_args: "-vf setpts=PTS/60 -r 25"
+    timelapse_args: "-vf scale=1280:-1,setpts=PTS/60 -r 25 -preset ultrafast"
   retain:
       # Required: Retention days (default: shown below)
       days: <retain days - to input>
