@@ -83,8 +83,14 @@ def main():
         # setpts=N/25/TB: builds a perfectly smooth, constant 25 fps timeline using the frame index (no stuttering)
         # -c:v libx264 -preset ultrafast: CPU-only fast H.264 encoding with minimal mathematical overhead
         temp_output_file = f"/tmp/timelapse_temp_{camera_name}.mp4"
+        progress_file = f"/tmp/ffmpeg_progress_{camera_name}.txt"
+
+        # FFmpeg's -progress flag writes machine-readable key=value lines to a file every ~second.
+        # This completely avoids all docker exec pipe-buffering issues.
         ffmpeg_cmd = [
-            "docker", "exec", "frigate", "stdbuf", "-oL", "-eL", "ffmpeg", "-hide_banner", "-y",
+            "docker", "exec", "frigate",
+            "ffmpeg", "-nostdin", "-hide_banner", "-y",
+            "-progress", progress_file, "-nostats",
             "-f", "concat", "-safe", "0", "-discard", "nokey",
             "-i", list_file_path,
             "-vf", "setpts=N/25/TB", "-r", "25",
@@ -94,44 +100,73 @@ def main():
 
         print(f"Starting sequential FFmpeg compilation for {camera_name}...")
         try:
-            # We redirect stderr to a pipe to capture real-time progress of files being opened
+            # Launch FFmpeg in background - all output goes to /dev/null
+            # Progress is tracked via the -progress file inside the container
             process = subprocess.Popen(
                 ffmpeg_cmd,
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1
+                stderr=subprocess.DEVNULL,
             )
-            
-            processed_files = 0
-            total_files = len(files)
-            
-            while True:
-                line = process.stderr.readline()
-                if not line:
-                    break
-                
-                # Capture when the concat demuxer opens the next file
-                if "Opening '" in line and "' for reading" in line:
-                    processed_files += 1
-                    percentage = min(int((processed_files / total_files) * 100), 100)
-                    
-                    # Print an elegant real-time progress bar on a single line
+
+            start_time = time.time()
+
+            # Probe just the first segment to count its keyframes, then extrapolate total.
+            # This is fast (~1 second) and gives an accurate frame estimate for the progress bar.
+            try:
+                probe_res = subprocess.run(
+                    [
+                        "docker", "exec", "frigate",
+                        "ffprobe", "-v", "quiet",
+                        "-select_streams", "v:0",
+                        "-skip_frame", "nokey",
+                        "-show_entries", "frame=pict_type",
+                        "-of", "csv",
+                        files[0]
+                    ],
+                    capture_output=True, text=True, timeout=15
+                )
+                # Each line is "frame,I" for a keyframe; count non-empty lines
+                keyframes_in_first = max(1, sum(1 for l in probe_res.stdout.strip().split('\n') if l.strip()))
+            except Exception:
+                keyframes_in_first = 5  # safe fallback: assume 5 keyframes per 10s segment
+
+            estimated_total_frames = keyframes_in_first * len(files)
+            print(f"Estimated keyframes: {estimated_total_frames} (~{keyframes_in_first}/segment × {len(files)} segments)")
+
+            while process.poll() is None:
+                time.sleep(2)
+
+                # Read the latest frame count from FFmpeg's -progress file inside the container
+                res = subprocess.run(
+                    ["docker", "exec", "frigate", "grep", "-a", "^frame=", progress_file],
+                    capture_output=True, text=True
+                )
+
+                elapsed = int(time.time() - start_time)
+                if res.returncode == 0 and res.stdout.strip():
+                    # The -progress file appends multiple frame= entries; take the last one
+                    lines = res.stdout.strip().split('\n')
+                    frame = int(lines[-1].split('=')[1])
+                    pct = min(int(frame / estimated_total_frames * 100), 99)
                     bar_length = 30
-                    filled_length = int(bar_length * percentage // 100)
+                    filled_length = int(bar_length * pct // 100)
                     bar = '█' * filled_length + '-' * (bar_length - filled_length)
-                    print(f"\rProgress: [{bar}] {percentage}% ({processed_files}/{total_files} files)", end="", flush=True)
-            
-            process.wait()
-            print() # Print a newline after progress bar completes
-            
+                    print(f"\rProgress: [{bar}] ~{pct}% | {frame} frames | {elapsed}s elapsed", end="", flush=True)
+                else:
+                    # FFmpeg just started, -progress file may not exist yet
+                    print(f"\rStarting... {elapsed}s elapsed", end="", flush=True)
+
+            print() # newline after progress bar
+
             if process.returncode != 0:
                 raise subprocess.CalledProcessError(process.returncode, ffmpeg_cmd)
-                
+
             print(f"Successfully compiled raw timelapse to {temp_output_file}")
         except Exception as e:
             print(f"\nFFmpeg compilation failed for {camera_name}: {e}", file=sys.stderr)
             subprocess.run(["docker", "exec", "frigate", "rm", "-f", list_file_path], capture_output=True)
+            subprocess.run(["docker", "exec", "frigate", "rm", "-f", progress_file], capture_output=True)
             continue
 
         # 4. Trigger microscopic export in Frigate API to register the database record in SQLite
@@ -207,6 +242,7 @@ def main():
         finally:
             # Clean up files inside container
             subprocess.run(["docker", "exec", "frigate", "rm", "-f", list_file_path], capture_output=True)
+            subprocess.run(["docker", "exec", "frigate", "rm", "-f", progress_file], capture_output=True)
 
     print("All automated timelapses successfully completed!")
 
