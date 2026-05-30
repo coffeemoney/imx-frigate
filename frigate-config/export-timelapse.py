@@ -84,7 +84,7 @@ def main():
         # -c:v libx264 -preset ultrafast: CPU-only fast H.264 encoding with minimal mathematical overhead
         temp_output_file = f"/tmp/timelapse_temp_{camera_name}.mp4"
         ffmpeg_cmd = [
-            "docker", "exec", "frigate", "ffmpeg", "-hide_banner", "-y",
+            "docker", "exec", "frigate", "stdbuf", "-oL", "-eL", "ffmpeg", "-hide_banner", "-y",
             "-f", "concat", "-safe", "0", "-discard", "nokey",
             "-i", list_file_path,
             "-vf", "setpts=N/25/TB", "-r", "25",
@@ -92,12 +92,45 @@ def main():
             temp_output_file
         ]
 
-        print(f"Starting sequential FFmpeg compilation for {camera_name} (this will block)...")
+        print(f"Starting sequential FFmpeg compilation for {camera_name}...")
         try:
-            subprocess.run(ffmpeg_cmd, check=True)
+            # We redirect stderr to a pipe to capture real-time progress of files being opened
+            process = subprocess.Popen(
+                ffmpeg_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1
+            )
+            
+            processed_files = 0
+            total_files = len(files)
+            
+            while True:
+                line = process.stderr.readline()
+                if not line:
+                    break
+                
+                # Capture when the concat demuxer opens the next file
+                if "Opening '" in line and "' for reading" in line:
+                    processed_files += 1
+                    percentage = min(int((processed_files / total_files) * 100), 100)
+                    
+                    # Print an elegant real-time progress bar on a single line
+                    bar_length = 30
+                    filled_length = int(bar_length * percentage // 100)
+                    bar = '█' * filled_length + '-' * (bar_length - filled_length)
+                    print(f"\rProgress: [{bar}] {percentage}% ({processed_files}/{total_files} files)", end="", flush=True)
+            
+            process.wait()
+            print() # Print a newline after progress bar completes
+            
+            if process.returncode != 0:
+                raise subprocess.CalledProcessError(process.returncode, ffmpeg_cmd)
+                
             print(f"Successfully compiled raw timelapse to {temp_output_file}")
         except Exception as e:
-            print(f"FFmpeg compilation failed for {camera_name}: {e}", file=sys.stderr)
+            print(f"\nFFmpeg compilation failed for {camera_name}: {e}", file=sys.stderr)
             subprocess.run(["docker", "exec", "frigate", "rm", "-f", list_file_path], capture_output=True)
             continue
 
