@@ -14,7 +14,15 @@ def main():
     parser = argparse.ArgumentParser(description="Export CPU/Hardware-optimized timelapses.")
     parser.add_argument("--hour", type=str, default=None, help="Filter to a specific hour (00-23) for quick testing.")
     parser.add_argument("--date", type=str, default=None, help="Process a specific date (YYYY-MM-DD) instead of yesterday.")
+    parser.add_argument("--cleanup-days", type=int, default=None,
+                        help="Delete timelapse exports older than N days. Can be combined with export or used standalone.")
+    parser.add_argument("--cleanup-only", action="store_true",
+                        help="Only run cleanup (skip timelapse generation). Requires --cleanup-days.")
     args = parser.parse_args()
+
+    if args.cleanup_only and args.cleanup_days is None:
+        print("Error: --cleanup-only requires --cleanup-days", file=sys.stderr)
+        sys.exit(1)
 
     # Configuration Constants
     SEGMENT_STRIDE = 6  # Process every N-th segment to speed up compilation. 1 = process all segments.
@@ -66,6 +74,9 @@ def main():
     print(f"Exporting CPU/HW-optimized timelapses for date: {date_str}{msg_suffix}")
 
     # 3. For each active camera, compile the timelapse sequentially (camera-by-camera)
+    if args.cleanup_only:
+        return  # Skip generation, cleanup runs after main() returns below
+
     for camera_name, camera_config in cameras.items():
         if not camera_config.get("enabled", True):
             print(f"Skipping disabled camera: {camera_name}")
@@ -329,7 +340,81 @@ def main():
                     except Exception:
                         pass
 
-    print("All automated timelapses successfully completed!")
+    if not args.cleanup_only:
+        print("All automated timelapses successfully completed!")
+
+    # Run cleanup if --cleanup-days was specified
+    if args.cleanup_days is not None:
+        cleanup_old_timelapses(args.cleanup_days)
+
+
+def cleanup_old_timelapses(max_age_days):
+    """Delete timelapse exports older than max_age_days via the Frigate API."""
+    print(f"\n--- Cleaning up timelapse exports older than {max_age_days} days ---")
+
+    cutoff_date = datetime.date.today() - datetime.timedelta(days=max_age_days)
+    print(f"Cutoff date: {cutoff_date} (exports on or before this date will be deleted)")
+
+    # Fetch all exports from Frigate API
+    try:
+        result = subprocess.run(
+            ["docker", "exec", "frigate", "curl", "-s", "http://localhost:5000/api/exports/"],
+            capture_output=True, text=True, check=True
+        )
+        exports = json.loads(result.stdout)
+    except Exception as e:
+        print(f"Error fetching exports from Frigate API: {e}", file=sys.stderr)
+        return
+
+    if not isinstance(exports, list):
+        print(f"Unexpected API response format: {type(exports)}", file=sys.stderr)
+        return
+
+    # Filter for timelapse exports and check their date
+    # Expected name pattern: timelapse_{camera}_{YYYY-MM-DD}
+    timelapse_pattern = re.compile(r'^timelapse_.+_(\d{4}-\d{2}-\d{2})$')
+    deleted_count = 0
+    skipped_count = 0
+
+    for export in exports:
+        export_name = export.get("name", "")
+        export_id = export.get("id", "")
+
+        match = timelapse_pattern.match(export_name)
+        if not match:
+            continue  # Not a timelapse export, skip
+
+        try:
+            export_date = datetime.datetime.strptime(match.group(1), "%Y-%m-%d").date()
+        except ValueError:
+            continue
+
+        if export_date > cutoff_date:
+            skipped_count += 1
+            continue  # Still within retention period
+
+        # Delete via Frigate API (removes both DB record and file)
+        print(f"Deleting: {export_name} (date: {export_date}, id: {export_id})")
+        try:
+            del_result = subprocess.run(
+                ["docker", "exec", "frigate", "curl", "-s", "-X", "DELETE",
+                 f"http://localhost:5000/api/exports/{export_id}"],
+                capture_output=True, text=True, check=True
+            )
+            try:
+                del_response = json.loads(del_result.stdout)
+                if del_response.get("success"):
+                    deleted_count += 1
+                else:
+                    print(f"  API returned failure: {del_response}", file=sys.stderr)
+            except json.JSONDecodeError:
+                # If API returns non-JSON (some versions just return 200 OK)
+                deleted_count += 1
+        except Exception as e:
+            print(f"  Failed to delete {export_name}: {e}", file=sys.stderr)
+
+    print(f"Cleanup complete: {deleted_count} deleted, {skipped_count} kept (within {max_age_days}-day retention)")
+
 
 if __name__ == "__main__":
     main()
