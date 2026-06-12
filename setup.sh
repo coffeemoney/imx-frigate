@@ -174,15 +174,25 @@ sleep 60
 echo ""
 echo "===== Setting up Automated Timelapse Exports ====="
 
+read -p "Enter number of days to keep timelapse exports (e.g., 7): " TIMELAPSE_RETAIN_DAYS
+
+if [[ -z "$TIMELAPSE_RETAIN_DAYS" ]]; then
+    echo "No retention period set. Timelapses will NOT be auto-cleaned."
+    CLEANUP_FLAG=""
+else
+    echo "Timelapse exports older than $TIMELAPSE_RETAIN_DAYS days will be auto-deleted."
+    CLEANUP_FLAG=" --cleanup-days $TIMELAPSE_RETAIN_DAYS"
+fi
+
 echo "Installing automated timelapse export script: /usr/local/bin/export-timelapse.py"
 sudo cp frigate-config/export-timelapse.py /usr/local/bin/export-timelapse.py
 sudo chmod +x /usr/local/bin/export-timelapse.py
 
 echo "Creating daily cron job at 2:00 AM in /etc/cron.d/frigate-timelapse..."
-sudo bash -c 'cat >/etc/cron.d/frigate-timelapse' <<'EOF'
+sudo bash -c "cat >/etc/cron.d/frigate-timelapse" <<EOF
 # Daily cron job to export previous day's timelapse for all enabled cameras in Frigate
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-0 2 * * * root /usr/local/bin/export-timelapse.py > /var/log/frigate-timelapse.log 2>&1
+0 2 * * * root /usr/local/bin/export-timelapse.py${CLEANUP_FLAG} > /var/log/frigate-timelapse.log 2>&1
 EOF
 sudo chmod 644 /etc/cron.d/frigate-timelapse
 
