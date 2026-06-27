@@ -349,13 +349,16 @@ def main():
 
 
 def cleanup_old_timelapses(max_age_days):
-    """Delete timelapse exports older than max_age_days via the Frigate API."""
+    """Delete timelapse exports older than max_age_days via the Frigate API,
+    then sweep the filesystem to remove any orphaned files."""
     print(f"\n--- Cleaning up timelapse exports older than {max_age_days} days ---")
 
     cutoff_date = datetime.date.today() - datetime.timedelta(days=max_age_days)
+    cutoff_ts = time.time() - (max_age_days * 86400)
     print(f"Cutoff date: {cutoff_date} (exports on or before this date will be deleted)")
 
-    # Fetch all exports from Frigate API
+    # --- Phase 1: API-based cleanup (removes DB records + attempts file deletion) ---
+    api_deleted_ids = set()  # Track IDs deleted via API so filesystem sweep can skip them
     try:
         result = subprocess.run(
             ["docker", "exec", "frigate", "curl", "-s", "http://localhost:5000/api/exports/"],
@@ -364,17 +367,17 @@ def cleanup_old_timelapses(max_age_days):
         exports = json.loads(result.stdout)
     except Exception as e:
         print(f"Error fetching exports from Frigate API: {e}", file=sys.stderr)
-        return
+        exports = []
 
     if not isinstance(exports, list):
         print(f"Unexpected API response format: {type(exports)}", file=sys.stderr)
-        return
+        exports = []
 
     # Filter for timelapse exports and check their date
     # Expected name pattern: timelapse_{camera}_{YYYY-MM-DD}
     timelapse_pattern = re.compile(r'^timelapse_.+_(\d{4}-\d{2}-\d{2})$')
-    deleted_count = 0
-    skipped_count = 0
+    api_deleted_count = 0
+    api_skipped_count = 0
 
     for export in exports:
         export_name = export.get("name", "")
@@ -390,30 +393,71 @@ def cleanup_old_timelapses(max_age_days):
             continue
 
         if export_date > cutoff_date:
-            skipped_count += 1
+            api_skipped_count += 1
             continue  # Still within retention period
 
         # Delete via Frigate API (removes both DB record and file)
-        print(f"Deleting: {export_name} (date: {export_date}, id: {export_id})")
+        print(f"Deleting via API: {export_name} (date: {export_date}, id: {export_id})")
         try:
             del_result = subprocess.run(
                 ["docker", "exec", "frigate", "curl", "-s", "-X", "DELETE",
                  f"http://localhost:5000/api/exports/{export_id}"],
                 capture_output=True, text=True, check=True
             )
+            api_deleted_ids.add(export_id)
             try:
                 del_response = json.loads(del_result.stdout)
                 if del_response.get("success"):
-                    deleted_count += 1
+                    api_deleted_count += 1
                 else:
                     print(f"  API returned failure: {del_response}", file=sys.stderr)
+                    api_deleted_count += 1  # Still count it; file sweep will catch orphans
             except json.JSONDecodeError:
                 # If API returns non-JSON (some versions just return 200 OK)
-                deleted_count += 1
+                api_deleted_count += 1
         except Exception as e:
             print(f"  Failed to delete {export_name}: {e}", file=sys.stderr)
 
-    print(f"Cleanup complete: {deleted_count} deleted, {skipped_count} kept (within {max_age_days}-day retention)")
+    print(f"API cleanup: {api_deleted_count} deleted, {api_skipped_count} kept (within {max_age_days}-day retention)")
+
+    # --- Phase 2: Filesystem sweep to catch orphaned files ---
+    # This handles cases where the API delete removed the DB record but left the file,
+    # or where exports were never tracked by the API in the first place.
+    EXPORTS_DIR = "/media/nvme/exports"
+    fs_deleted_count = 0
+
+    if not os.path.isdir(EXPORTS_DIR):
+        print(f"Exports directory not found: {EXPORTS_DIR}", file=sys.stderr)
+    else:
+        print(f"\n--- Filesystem sweep of {EXPORTS_DIR} for orphaned files ---")
+        for filename in os.listdir(EXPORTS_DIR):
+            filepath = os.path.join(EXPORTS_DIR, filename)
+
+            # Only process regular .mp4 files
+            if not os.path.isfile(filepath) or not filename.endswith(".mp4"):
+                continue
+
+            # Check file modification time against cutoff
+            try:
+                file_mtime = os.path.getmtime(filepath)
+            except OSError:
+                continue
+
+            if file_mtime >= cutoff_ts:
+                continue  # File is still within retention period
+
+            # File is older than retention period — delete it
+            file_age_days = (time.time() - file_mtime) / 86400
+            print(f"Removing orphaned file: {filename} (age: {file_age_days:.1f} days)")
+            try:
+                os.remove(filepath)
+                fs_deleted_count += 1
+            except OSError as e:
+                print(f"  Failed to remove {filepath}: {e}", file=sys.stderr)
+
+        print(f"Filesystem sweep: {fs_deleted_count} orphaned files removed")
+
+    print(f"\nTotal cleanup complete: {api_deleted_count} API + {fs_deleted_count} filesystem = {api_deleted_count + fs_deleted_count} removed")
 
 
 if __name__ == "__main__":
