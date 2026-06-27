@@ -361,7 +361,7 @@ def cleanup_old_timelapses(max_age_days):
     api_deleted_ids = set()  # Track IDs deleted via API so filesystem sweep can skip them
     try:
         result = subprocess.run(
-            ["docker", "exec", "frigate", "curl", "-s", "http://localhost:5000/api/exports/"],
+            ["docker", "exec", "frigate", "curl", "-s", "http://localhost:5000/api/exports"],
             capture_output=True, text=True, check=True
         )
         exports = json.loads(result.stdout)
