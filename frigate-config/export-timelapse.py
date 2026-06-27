@@ -401,7 +401,7 @@ def cleanup_old_timelapses(max_age_days):
         try:
             del_result = subprocess.run(
                 ["docker", "exec", "frigate", "curl", "-s", "-X", "DELETE",
-                 f"http://localhost:5000/api/exports/{export_id}"],
+                 f"http://localhost:5000/api/export/{export_id}"],
                 capture_output=True, text=True, check=True
             )
             api_deleted_ids.add(export_id)
