@@ -1,0 +1,52 @@
+services:
+  frigate:
+    container_name: frigate
+    privileged: true # this may not be necessary for all setups
+    restart: unless-stopped
+    stop_grace_period: 30s # allow enough time to shut down the various services
+    image: ghcr.io/blakeblackshear/frigate:0.15.2
+    shm_size: "512mb" # update for your cameras based on calculation above
+    volumes:
+      - ~/imx-frigate-main/frigate-config:/config
+      #- /usr/bin/ffmpeg:/usr/bin/ffmpeg
+      #- /usr/bin/ffprobe:/usr/bin/ffprobe
+      - /media/nvme:/media/frigate
+      - type: tmpfs # Optional: 1GB of memory, reduces SSD/SD Card wear
+        target: /tmp/cache
+        tmpfs:
+          size: 1000000000
+    #ports:
+      #- "8971:8971"
+      # - "5000:5000" # Internal unauthenticated access. Expose carefully.
+      #- "8554:8554" # RTSP feeds
+      #- "8555:8555/tcp" # WebRTC over tcp
+      #- "8555:8555/udp" # WebRTC over udp
+    networks:
+      - frigate
+  cloudflared:
+    container_name: cloudflared
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token <YOUR_TUNNEL_TOKEN>
+    networks:
+      - frigate
+  mosquitto:
+    container_name: mosquitto
+    image: eclipse-mosquitto
+    volumes:
+      - ~/imx-frigate-main/mqtt-config:/mosquitto/config
+    networks:
+      - frigate
+  viewu:
+    container_name: viewu
+    restart: unless-stopped 
+    image: mjeoffline/viewu:arm64_3.5
+    environment:
+      MQTT_PORT: 1883
+      MQTT_IP: mosquitto
+      MQTT_USER: "frigate_mqtt_user"
+      MQTT_PASSWORD: "frigate_mqtt_password"
+    networks:
+      - frigate
+networks:
+  frigate:

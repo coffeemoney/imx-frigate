@@ -91,19 +91,103 @@ echo "Verifying Docker Compose installation..."
 docker-compose --version || { echo "Docker Compose installation failed!"; exit 1; }
 
 echo ""
+echo "===== NVMe / PCIe SSD Storage Setup ====="
+
+MOUNT_POINT="/media/nvme"
+sudo mkdir -p "$MOUNT_POINT"
+
+# If not mounted yet but listed in /etc/fstab, try mounting via fstab first
+if ! mountpoint -q "$MOUNT_POINT" && grep -qs "$MOUNT_POINT" /etc/fstab; then
+    echo "$MOUNT_POINT found in /etc/fstab. Attempting mount..."
+    sudo mount "$MOUNT_POINT" 2>/dev/null || true
+fi
+
+if mountpoint -q "$MOUNT_POINT"; then
+    echo "$MOUNT_POINT is already mounted. Skipping NVMe scanning and format."
+    df -h "$MOUNT_POINT"
+else
+    echo "Scanning for NVMe / PCIe SSD devices..."
+    
+    PARTITIONS=$(lsblk -ln -o NAME,TYPE 2>/dev/null | awk '$2=="part" && $1~/^nvme/ {print $1}')
+    DISKS=$(lsblk -ln -o NAME,TYPE 2>/dev/null | awk '$2=="disk" && $1~/^nvme/ {print $1}')
+    
+    TARGET_DEV=""
+    if [[ -n "$PARTITIONS" ]]; then
+        FIRST_PART=$(echo "$PARTITIONS" | head -n1)
+        TARGET_DEV="/dev/$FIRST_PART"
+    elif [[ -n "$DISKS" ]]; then
+        FIRST_DISK=$(echo "$DISKS" | head -n1)
+        TARGET_DEV="/dev/$FIRST_DISK"
+    fi
+    
+    if [[ -z "$TARGET_DEV" ]]; then
+        echo "Warning: No NVMe / PCIe SSD detected."
+        echo "Using directory $MOUNT_POINT on the local filesystem."
+    else
+        echo "Found NVMe / PCIe SSD device: $TARGET_DEV"
+        
+        FSTYPE=$(sudo blkid -s TYPE -o value "$TARGET_DEV" 2>/dev/null || true)
+        
+        if [[ -z "$FSTYPE" ]]; then
+            echo "No filesystem found on $TARGET_DEV."
+            read -p "Do you want to format $TARGET_DEV as ext4? (y/N): " FORMAT_CONFIRM
+            if [[ "$FORMAT_CONFIRM" =~ ^[Yy]$ ]]; then
+                echo "Formatting $TARGET_DEV with ext4..."
+                sudo mkfs.ext4 -F "$TARGET_DEV"
+                FSTYPE="ext4"
+            else
+                echo "Skipping formatting. NVMe drive will not be mounted."
+                TARGET_DEV=""
+            fi
+        else
+            echo "Detected existing filesystem '$FSTYPE' on $TARGET_DEV."
+        fi
+        
+        if [[ -n "$TARGET_DEV" ]]; then
+            echo "Mounting $TARGET_DEV to $MOUNT_POINT..."
+            sudo mount "$TARGET_DEV" "$MOUNT_POINT"
+            
+            DEV_UUID=$(sudo blkid -s UUID -o value "$TARGET_DEV" 2>/dev/null || true)
+            
+            if grep -qs "$MOUNT_POINT" /etc/fstab; then
+                echo "$MOUNT_POINT is already configured in /etc/fstab."
+            else
+                if [[ -n "$DEV_UUID" ]]; then
+                    echo "Adding $TARGET_DEV (UUID=$DEV_UUID) to /etc/fstab..."
+                    echo "UUID=$DEV_UUID $MOUNT_POINT $FSTYPE defaults,noatime,nofail 0 2" | sudo tee -a /etc/fstab >/dev/null
+                else
+                    echo "Adding $TARGET_DEV to /etc/fstab..."
+                    echo "$TARGET_DEV $MOUNT_POINT $FSTYPE defaults,noatime,nofail 0 2" | sudo tee -a /etc/fstab >/dev/null
+                fi
+                echo "/etc/fstab updated successfully."
+            fi
+        fi
+    fi
+fi
+
+sudo chmod 777 "$MOUNT_POINT"
+echo "NVMe / PCIe SSD setup complete!"
+echo ""
+
 echo "===== Frigate Configuration Setup ====="
 
 read -p "Enter retention days: " RETAIN_DAYS
 read -p "Enter retention mode (all / motion / active_objects): " RETAIN_MODE
-read -p "Enter camera High Resolution RTSP stream URL (rtsp://...): " HIGH_CAMERA_RTSP
-read -p "Enter camera Lower Resolution RTSP stream URL (rtsp://...): " LOW_CAMERA_RTSP
+HIGH_CAMERA_RTSP="rtsp://127.0.0.1:554/high_res_rtsp"
+LOW_CAMERA_RTSP="rtsp://127.0.0.1:554/low_res_rtsp"
 
-if [[ -z "$RETAIN_DAYS" || -z "$RETAIN_MODE" || -z "$HIGH_CAMERA_RTSP" || -z "$LOW_CAMERA_RTSP" ]]; then
+if [[ -z "$RETAIN_DAYS" || -z "$RETAIN_MODE" ]]; then
     echo "Error: One or more required inputs are empty. Exiting..."
     exit 1
 fi
 
 CONFIG_FILE="frigate-config/config.yml"
+CONFIG_TEMPLATE="frigate-config/config.template.yml"
+
+if [[ -f "$CONFIG_TEMPLATE" ]]; then
+    echo "Resetting config.yml from template..."
+    cp "$CONFIG_TEMPLATE" "$CONFIG_FILE"
+fi
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
     echo "ERROR: $CONFIG_FILE not found!"
@@ -152,13 +236,21 @@ echo ""
 # Inject token into docker-compose.yaml
 echo "Updating docker-compose.yaml with your Cloudflare Tunnel token..."
 
-if [[ ! -f "docker-compose.yaml" ]]; then
-    echo "ERROR: docker-compose.yaml not found in this directory!"
+DOCKER_COMPOSE_FILE="docker-compose.yaml"
+DOCKER_COMPOSE_TEMPLATE="docker-compose.template.yaml"
+
+if [[ -f "$DOCKER_COMPOSE_TEMPLATE" ]]; then
+    echo "Resetting docker-compose.yaml from template..."
+    cp "$DOCKER_COMPOSE_TEMPLATE" "$DOCKER_COMPOSE_FILE"
+fi
+
+if [[ ! -f "$DOCKER_COMPOSE_FILE" ]]; then
+    echo "ERROR: $DOCKER_COMPOSE_FILE not found in this directory!"
     exit 1
 fi
 
 # Replace placeholder with actual token
-sudo sed -i "s|<YOUR_TUNNEL_TOKEN>|$CF_TUNNEL_TOKEN|g" docker-compose.yaml
+sudo sed -i "s|<YOUR_TUNNEL_TOKEN>|$CF_TUNNEL_TOKEN|g" "$DOCKER_COMPOSE_FILE"
 
 echo "Token successfully added to docker-compose.yaml!"
 echo ""

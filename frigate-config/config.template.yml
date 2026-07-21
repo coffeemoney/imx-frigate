@@ -1,0 +1,41 @@
+mqtt:
+  enabled: True
+  host: mosquitto
+  user: frigate_mqtt_user
+  password: frigate_mqtt_password
+  
+tls:
+  enabled: False
+
+record:
+  enabled: true
+  export:
+    timelapse_args: "-vf scale=1280:-1,setpts=PTS/60 -r 25 -preset ultrafast"
+  retain:
+      # Required: Retention days (default: shown below)
+      days: <retain days - to input>
+      # Optional: Mode for retention. (default: shown below)
+      #   all - save all recording segments for detections regardless of activity
+      #   motion - save all recordings segments for detections with any detected motion
+      #   active_objects - save all recording segments for detections with active/moving objects
+      #
+      # NOTE: If the retain mode for the camera is more restrictive than the mode configured
+      #       here, the segments will already be gone by the time this mode is applied.
+      #       For example, if the camera retain mode is "motion", the segments without motion are
+      #       never stored, so setting the mode to "all" here won't bring them back.
+      mode: <retain mode - to input>
+
+cameras:
+  camera1:
+    enabled: true
+    ffmpeg:
+      inputs:
+        - path: 'high_res_rtsp_here'
+          roles:
+            - record
+        - path: 'low_res_rtsp_here'
+          roles:
+            - detect
+    detect:
+      enabled: false
+version: 0.16-0
